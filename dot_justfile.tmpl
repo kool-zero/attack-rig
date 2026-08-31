@@ -1,182 +1,164 @@
-# Global justfile (justg). Run `justg --list` to see recipes.
-# chezmoi and just both use double braces, so recipe args are backtick-escaped to survive apply.
+# Global justfile (~/.justfile). Run `just --list` from anywhere.
+# chezmoi templates use Go template syntax; just recipe args use backtick escapes to survive chezmoi apply.
 
-# Re-apply dotfiles and pull the latest external tools
+set dotenv-load := false
+
+# ── rig management ───────────────────────────────────────────────────────────
+
+# Apply dotfiles and pull the latest external tool versions
 [group('rig')]
 update:
     chezmoi apply --refresh-externals
 
-# Every declared tool, where it comes from, and whether it's actually here
+# Every declared tool, where it comes from, whether it's on the box
 [group('rig')]
 tools:
     #!/usr/bin/env bash
     set -uo pipefail
-    src="$(chezmoi source-path)"
     ok=0; missing=0
-    show() {  # $1=binary $2=source label
+    show() {
         if command -v "$1" >/dev/null 2>&1; then
-            printf '  \033[32m*\033[0m %-12s %s\n' "$1" "$2"; ok=$((ok+1))
+            printf '  \033[32m*\033[0m %-14s %s\n' "$1" "$2"; ok=$((ok+1))
         else
-            printf '  \033[31m-\033[0m %-12s %s \033[31m(missing)\033[0m\n' "$1" "$2"; missing=$((missing+1))
+            printf '  \033[31m-\033[0m %-14s %s \033[31m(missing)\033[0m\n' "$1" "$2"; missing=$((missing+1))
         fi
     }
-
-    echo "apt (.chezmoidata/packages.yaml)"
-    for p in $(chezmoi data | jq -r '.packages.apt[]'); do
-        case "$p" in ca-certificates|git|curl) continue ;; esac   # not binaries you invoke
-        b="$p"; [ "$p" = ripgrep ] && b=rg
-        show "$b" "apt"
-    done
-
-    echo "upstream releases (.chezmoiexternal.toml)"
-    for b in $(grep -oE '^\[".local/bin/[^"]+"\]' "$src/.chezmoiexternal.toml" \
-               | sed -E 's|.*/([^"]+)".*|\1|'); do
-        show "$b" "github release"
-    done
-
-    echo "vendor installers (run_once_after_install-linux-tools)"
-    for b in just starship; do show "$b" "upstream install.sh"; done
-
-    echo "npm (.chezmoidata/packages.yaml)"
-    for b in $(chezmoi data | jq -r '.packages.npm | keys[]'); do show "$b" "npm"; done
-
+    echo "── shell & prompt ──────────────────────────────────────────"
+    for b in zsh tmux starship atuin navi fzf eza zoxide bat direnv just glow lazygit; do show "$b" "apt / installer"; done
+    echo "── offensive tooling ───────────────────────────────────────"
+    for b in chisel ligolo-proxy penelope goshs; do show "$b" "~/.local/bin (chezmoiexternal)"; done
+    echo "── pentest toolkit ─────────────────────────────────────────"
+    for b in nxc netexec hashcat john certipy nuclei subfinder httpx naabu katana dnsx; do show "$b" "apt / go install"; done
+    echo "── ai ──────────────────────────────────────────────────────"
+    for b in claude codex; do show "$b" "npm (~/.local/bin)"; done
     echo
-    echo "$ok present, $missing missing. Add a tool: apt/npm in .chezmoidata/packages.yaml,"
-    echo "upstream binaries in .chezmoiexternal.toml, system changes in ~/.bootstrap/."
+    echo "$ok present, $missing missing."
+    echo "Run 'just update' to pull latest versions."
 
-# Scaffold an engagement directory, with a direnv-pinned TARGET
+# ── offsec ───────────────────────────────────────────────────────────────────
+
+# Scaffold an engagement directory with direnv-pinned TARGET/LHOST/LOOT env vars
+# Usage: just new-project forest 10.10.11.35
+# Or with a path: just new-project htb/labs/forest 10.10.11.35
 [group('offsec')]
 new-project name target="":
     #!/usr/bin/env bash
     set -euo pipefail
-    d="{{`{{ name }}`}}"
+    d="{{ `{{ name }}` }}"
+    t="{{ `{{ target }}` }}"
     mkdir -p "$d"/{recon,loot,exploits,notes,scans,bin}
 
-    # .envrc is the committed shape; .env holds the values and stays out of git
-    cat > "$d/.envrc" <<'EOF'
-    # direnv loads this on cd. Values live in .env (gitignored); this file is safe to commit.
+    # .envrc: committed template — safe to version control
+    if [ ! -f "$d/.envrc" ]; then
+        cat > "$d/.envrc" << 'ENVRC'
     dotenv_if_exists .env
     export ENGAGEMENT="$(basename "$PWD")"
     export LOOT="$PWD/loot"
     PATH_add bin
-    EOF
-
-    [ -f "$d/.env" ] || printf 'TARGET=%s\n' "{{`{{ target }}`}}" > "$d/.env"
-    printf '.env\nloot/\n' > "$d/.gitignore"
-
-    echo "Scaffolded $d/ (recon loot exploits notes scans)"
-    if command -v direnv >/dev/null 2>&1; then
-        (cd "$d" && direnv allow)
-        echo "direnv allowed. cd into $d/ and \$TARGET, \$ENGAGEMENT, \$LOOT are set."
-    else
-        echo "direnv not installed; $d/.envrc will stay inert until it is."
+ENVRC
     fi
 
-# Bail if msfconsole isn't installed
-msfcheck := '''
-if ! command -v msfconsole &> /dev/null
-then
-    echo "msfconsole could not be found"
-    exit 1
-fi
-'''
+    # .env: actual values — gitignored, stays local
+    if [ ! -f "$d/.env" ]; then
+        LHOST=$(ip -4 -o addr show tun0 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1 || echo "10.10.14.x")
+        printf 'TARGET=%s\nLHOST=%s\nLPORT=4444\n' "$t" "$LHOST" > "$d/.env"
+    fi
 
-# Print badchars for exploit development
+    # .gitignore for the engagement
+    [ -f "$d/.gitignore" ] || printf '.env\nloot/\n' > "$d/.gitignore"
+
+    # notes.md starting template
+    if [ ! -f "$d/notes.md" ]; then
+        cat > "$d/notes.md" << NOTES
+# $(basename "$d")
+
+- Platform:
+- IP: $t
+- OS:
+- Started: $(date +%Y-%m-%d)
+
+## Hosts
+
+### $t
+- **OS:**
+- **Ports:**
+  | Port | Proto | Service | Version | Notes |
+  |------|-------|---------|---------|-------|
+  |      |       |         |         |       |
+- **Findings:**
+
+## Credentials
+
+| User | Secret (masked) | Source | Works on | Notes |
+|------|-----------------|--------|----------|-------|
+
+## Flags
+
+| Flag | Value | Location |
+|------|-------|----------|
+
+## Open / to-do
+- [ ]
+NOTES
+    fi
+
+    # targets.txt for navi $ target: picker
+    echo "$t" >> "$d/targets.txt"
+
+    echo "Scaffolded $d/"
+    if command -v direnv >/dev/null 2>&1; then
+        (cd "$d" && direnv allow 2>/dev/null)
+        echo "direnv allowed — cd into $d/ and \$TARGET, \$LHOST, \$LOOT are set."
+    fi
+    echo ""
+    echo "Next: cd $d/ && claude  (recon-notes skill takes it from there)"
+
+# ── security utilities ────────────────────────────────────────────────────────
+
+# Print all 256 bad chars as a Python byte string
 [group('security')]
 badchars:
-    #!/bin/bash
-    printf 'badchars = (\n'
-    printf '    b"\\x01\\x02\\x03\\x04\\x05\\x06\\x07\\x08\\x09\\x0a\\x0b\\x0c\\x0d\\x0e\\x0f\\x10"\n'
-    printf '    b"\\x11\\x12\\x13\\x14\\x15\\x16\\x17\\x18\\x19\\x1a\\x1b\\x1c\\x1d\\x1e\\x1f\\x20"\n'
-    printf '    b"\\x21\\x22\\x23\\x24\\x25\\x26\\x27\\x28\\x29\\x2a\\x2b\\x2c\\x2d\\x2e\\x2f\\x30"\n'
-    printf '    b"\\x31\\x32\\x33\\x34\\x35\\x36\\x37\\x38\\x39\\x3a\\x3b\\x3c\\x3d\\x3e\\x3f\\x40"\n'
-    printf '    b"\\x41\\x42\\x43\\x44\\x45\\x46\\x47\\x48\\x49\\x4a\\x4b\\x4c\\x4d\\x4e\\x4f\\x50"\n'
-    printf '    b"\\x51\\x52\\x53\\x54\\x55\\x56\\x57\\x58\\x59\\x5a\\x5b\\x5c\\x5d\\x5e\\x5f\\x60"\n'
-    printf '    b"\\x61\\x62\\x63\\x64\\x65\\x66\\x67\\x68\\x69\\x6a\\x6b\\x6c\\x6d\\x6e\\x6f\\x70"\n'
-    printf '    b"\\x71\\x72\\x73\\x74\\x75\\x76\\x77\\x78\\x79\\x7a\\x7b\\x7c\\x7d\\x7e\\x7f\\x80"\n'
-    printf '    b"\\x81\\x82\\x83\\x84\\x85\\x86\\x87\\x88\\x89\\x8a\\x8b\\x8c\\x8d\\x8e\\x8f\\x90"\n'
-    printf '    b"\\x91\\x92\\x93\\x94\\x95\\x96\\x97\\x98\\x99\\x9a\\x9b\\x9c\\x9d\\x9e\\x9f\\xa0"\n'
-    printf '    b"\\xa1\\xa2\\xa3\\xa4\\xa5\\xa6\\xa7\\xa8\\xa9\\xaa\\xab\\xac\\xad\\xae\\xaf\\xb0"\n'
-    printf '    b"\\xb1\\xb2\\xb3\\xb4\\xb5\\xb6\\xb7\\xb8\\xb9\\xba\\xbb\\xbc\\xbd\\xbe\\xbf\\xc0"\n'
-    printf '    b"\\xc1\\xc2\\xc3\\xc4\\xc5\\xc6\\xc7\\xc8\\xc9\\xca\\xcb\\xcc\\xcd\\xce\\xcf\\xd0"\n'
-    printf '    b"\\xd1\\xd2\\xd3\\xd4\\xd5\\xd6\\xd7\\xd8\\xd9\\xda\\xdb\\xdc\\xdd\\xde\\xdf\\xe0"\n'
-    printf '    b"\\xe1\\xe2\\xe3\\xe4\\xe5\\xe6\\xe7\\xe8\\xe9\\xea\\xeb\\xec\\xed\\xee\\xef\\xf0"\n'
-    printf '    b"\\xf1\\xf2\\xf3\\xf4\\xf5\\xf6\\xf7\\xf8\\xf9\\xfa\\xfb\\xfc\\xfd\\xfe\\xff")\n'
+    #!/usr/bin/env python3
+    print('badchars = (')
+    for start in range(1, 256, 16):
+        row = ''.join(f'\\x{i:02x}' for i in range(start, min(start+16, 256)))
+        print(f'    b"{row}"')
+    print(')')
 
-# Cyclic pattern for offset hunting (msf-pattern_create)
+# Cyclic De Bruijn pattern (replaces msf-pattern_create)
 [group('security')]
 pattern length:
     #!/usr/bin/env python3
     import string, sys
-    want = int("{{`{{ length }}`}}")
-    pat = "".join(
-        u + l + d
-        for u in string.ascii_uppercase
-        for l in string.ascii_lowercase
-        for d in string.digits
-    )
-    if want > len(pat):
-        sys.exit("pattern: max length is %d" % len(pat))
+    want = int("{{ `{{ length }}` }}")
+    pat = "".join(u + l + d for u in string.ascii_uppercase for l in string.ascii_lowercase for d in string.digits)
+    if want > len(pat): sys.exit(f"pattern: max length is {len(pat)}")
     print(pat[:want])
 
-# Find where a crash value lands in that pattern (msf-pattern_offset)
-# Takes ASCII "Aa0B" or a little-endian register dump like 0x41326641
+# Find offset of crash value in cyclic pattern (replaces msf-pattern_offset)
 [group('security')]
 offset value:
     #!/usr/bin/env python3
     import string, sys
-    raw = "{{`{{ value }}`}}"
-    if raw.lower().startswith("0x"):
-        needle = bytes.fromhex(raw[2:])[::-1].decode("latin-1")
-    else:
-        needle = raw
-    pat = "".join(
-        u + l + d
-        for u in string.ascii_uppercase
-        for l in string.ascii_lowercase
-        for d in string.digits
-    )
+    raw = "{{ `{{ value }}` }}"
+    needle = bytes.fromhex(raw[2:])[::-1].decode("latin-1") if raw.lower().startswith("0x") else raw
+    pat = "".join(u + l + d for u in string.ascii_uppercase for l in string.ascii_lowercase for d in string.digits)
     at = pat.find(needle)
-    if at < 0:
-        sys.exit("offset: %r is not in the pattern" % needle)
-    print("%s found at offset %d" % (needle, at))
+    if at < 0: sys.exit(f"offset: {needle!r} not found in pattern")
+    print(f"{needle!r} at offset {at}")
 
-# Start a multihandler for a meterpreter reverse shell
+# Start MSF multi/handler for meterpreter
+# Usage: just handler windows tun0 4444
 [group('security')]
-revmeter os iface port:
-    #!/bin/env bash
-    {{`{{ msfcheck }}`}}
-    if [[ "{{`{{os}}`}}" == "windows" ]]; then
-        export LHOST={{`{{iface}}`}}
-        export LPORT={{`{{port}}`}}
-        sudo msfconsole -q -x "use exploit/multi/handler; set PAYLOAD windows/meterpreter/reverse_tcp; set LHOST $LHOST; set LPORT $LPORT; exploit"
-        unset LHOST LPORT
-    elif [[ "{{`{{os}}`}}" == "linux" ]]; then
-        export LHOST={{`{{iface}}`}}
-        export LPORT={{`{{port}}`}}
-        sudo msfconsole -q -x "use exploit/multi/handler; set PAYLOAD linux/x86/meterpreter/reverse_tcp; set LHOST $LHOST; set LPORT $LPORT; exploit"
-        unset LHOST LPORT
+handler os iface port:
+    #!/usr/bin/env bash
+    LHOST=$(ip -4 -o addr show {{ `{{ iface }}` }} 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1)
+    [ -z "$LHOST" ] && { echo "Could not detect IP for {{ `{{ iface }}` }}"; exit 1; }
+    if [ "{{ `{{ os }}` }}" = "windows" ]; then
+        sudo msfconsole -q -x "use exploit/multi/handler; set payload windows/x64/meterpreter/reverse_tcp; set LHOST $LHOST; set LPORT {{ `{{ port }}` }}; run"
+    elif [ "{{ `{{ os }}` }}" = "linux" ]; then
+        sudo msfconsole -q -x "use exploit/multi/handler; set payload linux/x64/meterpreter/reverse_tcp; set LHOST $LHOST; set LPORT {{ `{{ port }}` }}; run"
     else
-        echo "Unsupported OS: {{`{{os}}"`}}
-        exit 1
-    fi
-
-# Start a multihandler for a regular reverse shell
-[group('security')]
-rev os iface port:
-    #!/bin/env bash
-    {{`{{ msfcheck }}`}}
-    if [[ "{{`{{os}}`}}" == "windows" ]]; then
-        export LHOST={{`{{iface}}`}}
-        export LPORT={{`{{port}}`}}
-        sudo msfconsole -q -x "use exploit/multi/handler; set PAYLOAD windows/shell/reverse_tcp; set LHOST $LHOST; set LPORT $LPORT; exploit"
-        unset LHOST LPORT
-    elif [[ "{{`{{os}}`}}" == "linux" ]]; then
-        export LHOST={{`{{iface}}`}}
-        export LPORT={{`{{port}}`}}
-        sudo msfconsole -q -x "use exploit/multi/handler; set PAYLOAD linux/x86/shell/reverse_tcp; set LHOST $LHOST; set LPORT $LPORT; exploit"
-        unset LHOST LPORT
-    else
-        echo "Unsupported OS: {{`{{os}}`}}"
+        echo "Usage: just handler <windows|linux> <iface> <port>"
         exit 1
     fi

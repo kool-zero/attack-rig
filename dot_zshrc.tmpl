@@ -98,3 +98,18 @@ fi
 # --- prompt: Starship (Catppuccin Mocha) --------------------------------------------
 # last, so nothing above clobbers the prompt
 command -v starship >/dev/null 2>&1 && eval "$(starship init zsh)"
+
+# ── pentest aliases ──────────────────────────────────────────────────────────
+# Sourced from a separate chezmoi-managed file so they can evolve independently
+[ -r "$HOME/.pentest-aliases.sh" ] && source "$HOME/.pentest-aliases.sh"
+
+# ── VPN quick-connect (from ~/data/vpns/vpn-aliases.conf) ───────────────────
+# Format: alias=path/to/file.ovpn (relative to ~/data/vpns/)
+# Add a line, open a new shell, the alias exists. Syncthing carries the file.
+VPN_ALIAS_CONF="$HOME/data/vpns/vpn-aliases.conf"
+if [[ -f "$VPN_ALIAS_CONF" ]]; then
+  while IFS='=' read -r vname vpath; do
+    [[ -z "$vname" || "$vname" == \#* ]] && continue
+    eval "function ${vname}() { sudo openvpn \"\$HOME/data/vpns/${vpath}\"; }"
+  done < "$VPN_ALIAS_CONF"
+fi
