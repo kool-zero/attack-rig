@@ -1,0 +1,33 @@
+{{ if eq .chezmoi.os "linux" -}}
+#!/bin/bash
+# TPM itself arrives as an external, but it does not install the plugins listed in
+# ~/.tmux.conf: that normally needs `prefix + I` typed inside a running tmux. On a
+# fresh box that means extrakto, yank and the theme are silently absent, which is
+# not "one command and the rig is up". Install them here instead.
+#
+# Re-runs whenever the plugin list changes, because the hash below is part of this
+# script's rendered content.
+# plugins: {{ include "dot_tmux.conf.tmpl" | regexFind "(?s)@plugin.*tpm/tpm" | sha256sum }}
+set -euo pipefail
+
+TPM="{{ .chezmoi.homeDir }}/.tmux/plugins/tpm/bin/install_plugins"
+[ -x "$TPM" ] || { echo "install-tmux-plugins: tpm not present yet, skipping."; exit 0; }
+
+echo "==> install-tmux-plugins: installing what ~/.tmux.conf declares"
+# Non-fatal on purpose. tpm lists itself as a plugin, and its self-install always
+# fails here because chezmoi already provides that directory as an external, so a
+# non-zero exit is expected and must not abort the apply.
+"$TPM" 2>&1 | sed 's/^/    /' || true
+
+missing=""
+for p in extrakto tmux-yank tmux-sensible; do
+    [ -d "{{ .chezmoi.homeDir }}/.tmux/plugins/$p" ] || missing="$missing $p"
+done
+[ -n "$missing" ] && echo "install-tmux-plugins: WARNING still missing:$missing" >&2
+
+# tmux only picks up newly installed plugins on a fresh config load
+if tmux info >/dev/null 2>&1; then
+    tmux source-file "{{ .chezmoi.homeDir }}/.tmux.conf" 2>/dev/null \
+        && echo "install-tmux-plugins: reloaded the running tmux server"
+fi
+{{ end -}}

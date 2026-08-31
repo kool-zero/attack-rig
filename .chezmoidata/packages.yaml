@@ -1,0 +1,38 @@
+packages:
+  apt:
+    - zsh
+    - tmux
+    - git
+    - curl
+    - ca-certificates
+    - fzf
+    - ripgrep
+    - bat
+    - eza
+    - jq
+    - zoxide
+    - direnv
+    - unzip
+    # pentest additions
+    - proxychains4
+    - netexec
+    - hashcat
+    - john
+    - seclists
+    - golang-go
+    - nodejs
+    - npm
+    - pipx
+    - docker.io
+    - lazygit
+    # xrdp + desktop (needed for Guacamole/RDP access)
+    - xrdp
+    - xorgxrdp
+    - kali-desktop-xfce
+    # syncthing
+    - syncthing
+    # ansible (for system bootstrap)
+    - ansible
+  npm:
+    claude: "@anthropic-ai/claude-code"
+    codex: "@openai/codex"

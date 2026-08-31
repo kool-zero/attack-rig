@@ -1,0 +1,137 @@
+# Tools/plugins fetched by URL on `chezmoi apply`. refreshPeriod = re-check interval; force with --refresh-externals.
+
+# --- shell/tmux plugins ---
+[".oh-my-zsh"]
+    type = "archive"
+    url = "https://github.com/ohmyzsh/ohmyzsh/archive/master.tar.gz"
+    exact = true
+    stripComponents = 1
+    refreshPeriod = "168h"
+
+[".oh-my-zsh/custom/plugins/zsh-autosuggestions"]
+    type = "archive"
+    url = "https://github.com/zsh-users/zsh-autosuggestions/archive/master.zip"
+    exact = true
+    stripComponents = 1
+    refreshPeriod = "168h"
+
+[".oh-my-zsh/custom/plugins/fast-syntax-highlighting"]
+    type = "archive"
+    url = "https://github.com/zdharma-continuum/fast-syntax-highlighting/archive/refs/heads/master.zip"
+    exact = true
+    stripComponents = 1
+    refreshPeriod = "168h"
+
+# fast-syntax-highlighting theme; dot_zshrc wires it up via `fast-theme XDG:catppuccin-mocha`
+[".config/fsh/catppuccin-mocha.ini"]
+    type = "file"
+    url = "https://raw.githubusercontent.com/catppuccin/zsh-fsh/main/themes/catppuccin-mocha.ini"
+    refreshPeriod = "168h"
+
+[".tmux/plugins/tpm"]
+    type = "archive"
+    url = "https://github.com/tmux-plugins/tpm/archive/refs/heads/master.zip"
+    exact = true
+    stripComponents = 1
+    refreshPeriod = "168h"
+
+# --- offensive tooling ---
+# penelope: single script pulled from main into ~/.local/bin; tracks upstream on refresh
+[".local/bin/penelope"]
+    type = "file"
+    url = "https://raw.githubusercontent.com/brightio/penelope/main/penelope.py"
+    executable = true
+    refreshPeriod = "168h"
+
+{{- $chisel := gitHubLatestRelease "jpillora/chisel" -}}
+{{- $cv := $chisel.TagName | trimPrefix "v" -}}
+{{- $ligolo := gitHubLatestRelease "nicocha30/ligolo-ng" -}}
+{{- $lv := $ligolo.TagName | trimPrefix "v" -}}
+# chisel + ligolo from GitHub releases; gitHubLatestRelease resolves the newest tag.
+# Split by intent: binaries you RUN -> ~/.local/bin, payloads you SERVE -> ~/.local/share/payloads.
+[".local/bin/chisel"]
+    type = "file"
+    url = "https://github.com/jpillora/chisel/releases/download/{{ $chisel.TagName }}/chisel_{{ $cv }}_linux_{{ .chezmoi.arch }}.gz"
+    # un-gzip via portable filter; works on any chezmoi version, unlike decompress = "gzip"
+    filter.command = "gzip"
+    filter.args = ["-dc"]
+    executable = true
+    refreshPeriod = "168h"
+
+[".local/bin/ligolo-proxy"]
+    type = "archive-file"
+    url = "https://github.com/nicocha30/ligolo-ng/releases/download/{{ $ligolo.TagName }}/ligolo-ng_proxy_{{ $lv }}_linux_{{ .chezmoi.arch }}.tar.gz"
+    path = "proxy"
+    executable = true
+    refreshPeriod = "168h"
+
+# --- payloads to drop on targets (served, not run) ---
+[".local/share/payloads/chisel.exe"]
+    type = "archive-file"
+    url = "https://github.com/jpillora/chisel/releases/download/{{ $chisel.TagName }}/chisel_{{ $cv }}_windows_amd64.zip"
+    path = "chisel.exe"
+    refreshPeriod = "168h"
+
+[".local/share/payloads/ligolo-agent.exe"]
+    type = "archive-file"
+    url = "https://github.com/nicocha30/ligolo-ng/releases/download/{{ $ligolo.TagName }}/ligolo-ng_agent_{{ $lv }}_windows_amd64.zip"
+    path = "agent.exe"
+    refreshPeriod = "168h"
+
+[".local/share/payloads/ligolo-agent-linux-amd64"]
+    type = "archive-file"
+    url = "https://github.com/nicocha30/ligolo-ng/releases/download/{{ $ligolo.TagName }}/ligolo-ng_agent_{{ $lv }}_linux_amd64.tar.gz"
+    path = "agent"
+    executable = true
+    refreshPeriod = "168h"
+
+# goshs: version-pinned release (bump the tag to move it)
+[".local/bin/goshs"]
+    type = "archive-file"
+    url = "https://github.com/goshs-labs/goshs/releases/download/v2.1.4/goshs_v2.1.4_linux_{{ if eq .chezmoi.arch "arm64" }}arm64{{ else }}x86_64{{ end }}.tar.gz"
+    path = "goshs"
+    executable = true
+    refreshPeriod = "168h"
+
+# --- CLI toolkit ---
+# Upstream builds, so every box runs the identical binary. Asset naming differs
+# per project, hence a triple per tool rather than one shared variable.
+{{- $navi  := gitHubLatestRelease "denisidoro/navi" -}}
+{{- $glow  := gitHubLatestRelease "charmbracelet/glow" -}}
+{{- $gv    := $glow.TagName | trimPrefix "v" -}}
+{{- $atuin := gitHubLatestRelease "atuinsh/atuin" -}}
+{{- $yazi  := gitHubLatestRelease "sxyazi/yazi" -}}
+{{- $gnu   := (eq .chezmoi.arch "arm64") | ternary "aarch64-unknown-linux-gnu" "x86_64-unknown-linux-gnu" -}}
+
+# navi: cheatsheet launcher (Ctrl-G). ARM ships gnu, x86 ships musl
+[".local/bin/navi"]
+    type = "archive-file"
+    url = "https://github.com/denisidoro/navi/releases/download/{{ $navi.TagName }}/navi-{{ $navi.TagName }}-{{ if eq .chezmoi.arch "arm64" }}aarch64-unknown-linux-gnu{{ else }}x86_64-unknown-linux-musl{{ end }}.tar.gz"
+    # the tarball stores it as ./navi, and chezmoi matches the literal entry
+    path = "./navi"
+    executable = true
+    refreshPeriod = "168h"
+
+# glow: markdown renderer. asset drops the leading v from the tag
+[".local/bin/glow"]
+    type = "archive-file"
+    url = "https://github.com/charmbracelet/glow/releases/download/{{ $glow.TagName }}/glow_{{ $gv }}_Linux_{{ if eq .chezmoi.arch "arm64" }}arm64{{ else }}x86_64{{ end }}.tar.gz"
+    path = "glow_{{ $gv }}_Linux_{{ if eq .chezmoi.arch "arm64" }}arm64{{ else }}x86_64{{ end }}/glow"
+    executable = true
+    refreshPeriod = "168h"
+
+# atuin: shell history (Ctrl-R)
+[".local/bin/atuin"]
+    type = "archive-file"
+    url = "https://github.com/atuinsh/atuin/releases/download/{{ $atuin.TagName }}/atuin-{{ $gnu }}.tar.gz"
+    path = "atuin-{{ $gnu }}/atuin"
+    executable = true
+    refreshPeriod = "168h"
+
+# yazi: file manager, not packaged in Kali. ships a .zip
+[".local/bin/yazi"]
+    type = "archive-file"
+    url = "https://github.com/sxyazi/yazi/releases/download/{{ $yazi.TagName }}/yazi-{{ $gnu }}.zip"
+    path = "yazi-{{ $gnu }}/yazi"
+    executable = true
+    refreshPeriod = "168h"
