@@ -1,0 +1,9 @@
+# ~/.zshenv: sourced by every zsh (shells, scripts, ssh commands, cron). Fast, silent, env-only.
+
+# chezmoi installs tools into ~/.local/bin; put it on PATH here so every shell sees them
+typeset -U path PATH
+[ -d "$HOME/.local/bin" ] && path=("$HOME/.local/bin" $path)
+export PATH
+
+# pin navi's cheat dir instead of its XDG default
+export NAVI_PATH="$HOME/.local/share/navi/cheats"

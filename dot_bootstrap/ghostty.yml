@@ -1,0 +1,46 @@
+---
+# Provision Ghostty + Code - OSS on Kali. chezmoi carries this but never runs it; run it yourself:
+#     ansible-playbook ~/.bootstrap/ghostty.yml -K
+# Ghostty isn't in Kali apt, so fetch the Debian trixie .deb from mkasberg/ghostty-ubuntu; Code - OSS is.
+- name: Provision Ghostty (GPU terminal) and Code - OSS on Kali/Debian
+  hosts: localhost
+  connection: local
+  become: true
+  gather_facts: false
+
+  vars:
+    ghostty_tag: "1.3.1-0-ppa2"          # GitHub release tag
+    ghostty_debver: "1.3.1-0.ppa2"       # version string inside the .deb filename
+    ghostty_repo: "mkasberg/ghostty-ubuntu"
+    ghostty_debian_codename: "trixie"    # Kali Rolling tracks Debian trixie/sid
+
+  tasks:
+    - name: Detect this box's dpkg architecture (arm64 / amd64)
+      ansible.builtin.command: dpkg --print-architecture
+      register: dpkg_arch
+      changed_when: false
+
+    - name: Install Code - OSS (already packaged in Kali apt)
+      ansible.builtin.apt:
+        name: code-oss
+        state: present
+        update_cache: true
+
+    - name: Download the arch-correct Ghostty .deb (Debian {{ ghostty_debian_codename }} build)
+      ansible.builtin.get_url:
+        url: "https://github.com/{{ ghostty_repo }}/releases/download/{{ ghostty_tag }}/ghostty_{{ ghostty_debver }}_{{ dpkg_arch.stdout }}_{{ ghostty_debian_codename }}.deb"
+        dest: "/tmp/ghostty_{{ dpkg_arch.stdout }}.deb"
+        mode: "0644"
+
+    - name: Install Ghostty from the .deb (apt pulls in its dependencies)
+      ansible.builtin.apt:
+        deb: "/tmp/ghostty_{{ dpkg_arch.stdout }}.deb"
+
+    - name: Confirm both tools are on PATH
+      ansible.builtin.shell: "command -v ghostty && command -v code-oss"
+      register: tools_check
+      changed_when: false
+
+    - name: Report
+      ansible.builtin.debug:
+        msg: "Installed: {{ tools_check.stdout_lines }}"

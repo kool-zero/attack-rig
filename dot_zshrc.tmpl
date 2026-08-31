@@ -1,0 +1,103 @@
+# ~/.zshrc: interactive shells. Tool integrations are command -v guarded, so this runs
+# fine on a bare jumpbox or a full Kali box. PATH lives in ~/.zshenv.
+
+# login shells reset PATH after ~/.zshenv; re-prepend ~/.local/bin
+typeset -U path PATH
+[ -d "$HOME/.local/bin" ] && path=("$HOME/.local/bin" $path)
+export PATH
+
+# --- oh-my-zsh ----------------------------------------------------------------------
+export ZSH="$HOME/.oh-my-zsh"
+# Starship owns the prompt, so no oh-my-zsh theme
+ZSH_THEME=""
+# chezmoi handles updates
+DISABLE_AUTO_UPDATE="true"
+# vendored by chezmoi
+plugins=(git zsh-autosuggestions fast-syntax-highlighting)
+[ -r "$ZSH/oh-my-zsh.sh" ] && source "$ZSH/oh-my-zsh.sh"
+
+# --- fast-syntax-highlighting theme (Catppuccin Mocha) ------------------------------
+# XDG: makes fast-theme read the ini from ~/.config/fsh
+if command -v fast-theme >/dev/null 2>&1 && [ -r "$HOME/.config/fsh/catppuccin-mocha.ini" ]; then
+    fast-theme XDG:catppuccin-mocha >/dev/null 2>&1
+fi
+
+# --- tool integrations (all command -v guarded) -------------------------------------
+# zoxide, aliased over cd
+command -v zoxide >/dev/null 2>&1 && eval "$(zoxide init --cmd cd zsh)"
+
+# eza over ls. Aliases are interactive-only, so scripts still get real ls.
+# Without eza these are never defined and plain ls keeps working.
+if command -v eza >/dev/null 2>&1; then
+    alias ls='eza --group-directories-first --icons=auto'
+    alias ll='eza -l  --group-directories-first --icons=auto --git'
+    alias la='eza -la --group-directories-first --icons=auto --git'
+    alias lt='eza --tree --level=2 --group-directories-first --icons=auto'
+fi
+
+# fzf keybindings + completion; --zsh on new fzf, on-disk scripts on old
+if command -v fzf >/dev/null 2>&1; then
+    if _fzf_init="$(fzf --zsh 2>/dev/null)"; then
+        eval "$_fzf_init"
+    else
+        for _f in /usr/share/doc/fzf/examples/key-bindings.zsh \
+                  /usr/share/doc/fzf/examples/completion.zsh \
+                  /usr/share/fzf/key-bindings.zsh \
+                  /usr/share/fzf/completion.zsh; do
+            [ -r "$_f" ] && source "$_f"
+        done
+        unset _f
+    fi
+    unset _fzf_init
+fi
+
+# fz [filter]: fzf picker over zoxide dirs; falls back to a plain jump without fzf
+fz() {
+    command -v zoxide >/dev/null 2>&1 || { echo "fz: needs zoxide" >&2; return 1; }
+    if ! command -v fzf >/dev/null 2>&1; then
+        local d; d="$(zoxide query -- "$@")" && [ -n "$d" ] && cd -- "$d"
+        return
+    fi
+    local preview
+    if command -v eza >/dev/null 2>&1; then
+        preview='eza -la --color=always --group-directories-first --icons=auto -- {}'
+    else
+        preview='ls -la -- {}'
+    fi
+    local dir
+    dir="$(zoxide query --list -- "$@" \
+        | fzf --height=40% --reverse --tiebreak=index \
+              --preview="$preview" --preview-window='right,55%,border-left' \
+              --header='fz · jump to a zoxide dir  (ctrl-/ toggles preview)' \
+              --bind='ctrl-/:toggle-preview')"
+    [ -n "$dir" ] && cd -- "$dir"
+}
+
+# atuin history search; init after fzf so it wins Ctrl-R
+command -v atuin  >/dev/null 2>&1 && eval "$(atuin init zsh)"
+
+# navi: Ctrl-G cheatsheet launcher
+command -v navi   >/dev/null 2>&1 && eval "$(navi widget zsh)"
+
+# direnv: per-directory env from .envrc. Blocked until you run 'direnv allow'
+command -v direnv >/dev/null 2>&1 && eval "$(direnv hook zsh)"
+
+# y: yazi, cd'ing to wherever you quit
+if command -v yazi >/dev/null 2>&1; then
+    y() {
+        local tmp cwd
+        tmp="$(mktemp -t yazi-cwd.XXXXXX)"
+        yazi "$@" --cwd-file="$tmp"
+        if cwd="$(command cat -- "$tmp")" && [ -n "$cwd" ] && [ "$cwd" != "$PWD" ]; then
+            builtin cd -- "$cwd"
+        fi
+        rm -f -- "$tmp"
+    }
+fi
+
+# --- prompt: Starship (Catppuccin Mocha) --------------------------------------------
+# last, so nothing above clobbers the prompt
+command -v starship >/dev/null 2>&1 && eval "$(starship init zsh)"
+
+# ── pentest aliases ──────────────────────────────────────────────────────────
+[ -r "$HOME/.pentest-aliases.sh" ] && source "$HOME/.pentest-aliases.sh"

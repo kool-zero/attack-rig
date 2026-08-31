@@ -1,0 +1,181 @@
+---
+# kali-system.yml — system-level provisioning.
+# chezmoi carries this to ~/.bootstrap/kali-system.yml.
+# Run ONCE after chezmoi apply:
+#
+#   ansible-playbook ~/.bootstrap/kali-system.yml -K -e "target_user=$(whoami)"
+#
+# Always pass -e "target_user=$(whoami)" so it uses YOUR user, not root.
+
+- name: Kali attack box — system provisioning
+  hosts: localhost
+  connection: local
+  become: true
+  gather_facts: true
+
+  vars:
+    target_user: "{{ lookup('env', 'SUDO_USER') | default(ansible_user_id, true) }}"
+
+  tasks:
+
+    # ── docker (must come before adding user to docker group) ──────────────
+    - name: Install docker.io
+      apt:
+        name: docker.io
+        state: present
+        update_cache: true
+
+    - name: Add target user to docker group
+      user:
+        name: "{{ target_user }}"
+        groups: docker
+        append: true
+
+    # ── xrdp (for Guacamole/RDP access) ────────────────────────────────────
+    - name: Install xrdp and XFCE desktop
+      apt:
+        name:
+          - xrdp
+          - xorgxrdp
+          - kali-desktop-xfce
+        state: present
+
+    - name: Fix xrdp user home directory (prevents session tracking issues)
+      user:
+        name: xrdp
+        home: /var/lib/xrdp
+        move_home: false
+      failed_when: false
+
+    - name: Create xrdp home directory
+      file:
+        path: /var/lib/xrdp
+        state: directory
+        owner: xrdp
+        group: xrdp
+        mode: "0750"
+
+    - name: Fix xrdp TLS key permissions
+      file:
+        path: /etc/xrdp/key.pem
+        mode: "0640"
+        group: ssl-cert
+
+    - name: Add xrdp user to ssl-cert group
+      user:
+        name: xrdp
+        groups: ssl-cert
+        append: true
+
+    - name: Write correct startwm.sh for XFCE
+      copy:
+        dest: /etc/xrdp/startwm.sh
+        mode: "0755"
+        content: |
+          #!/bin/sh
+          if [ -r /etc/default/locale ]; then
+            . /etc/default/locale
+            export LANG LANGUAGE
+          fi
+          startxfce4
+
+    - name: Create .xsession for target user
+      copy:
+        dest: "/home/{{ target_user }}/.xsession"
+        content: "xfce4-session\n"
+        owner: "{{ target_user }}"
+        mode: "0755"
+
+    - name: Enable and restart xrdp
+      systemd:
+        name: xrdp
+        enabled: true
+        state: restarted
+
+    # ── syncthing ───────────────────────────────────────────────────────────
+    - name: Install Syncthing
+      apt:
+        name: syncthing
+        state: present
+
+    - name: Create ~/data directory structure
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ target_user }}"
+        mode: "0755"
+      loop:
+        - "/home/{{ target_user }}/data"
+        - "/home/{{ target_user }}/data/vpns"
+        - "/home/{{ target_user }}/data/cheatsheets"
+        - "/home/{{ target_user }}/data/platforms"
+
+    - name: Enable and start Syncthing for target user
+      systemd:
+        name: "syncthing@{{ target_user }}"
+        enabled: true
+        state: started
+
+    # ── pentest toolkit ─────────────────────────────────────────────────────
+    - name: Decompress rockyou.txt
+      shell: gunzip -f /usr/share/wordlists/rockyou.txt.gz
+      args:
+        creates: /usr/share/wordlists/rockyou.txt
+
+    - name: Install Certipy via pipx
+      become: true
+      become_user: "{{ target_user }}"
+      shell: pipx install certipy-ad
+      args:
+        creates: "/home/{{ target_user }}/.local/bin/certipy"
+
+    - name: Ensure Go directories have correct ownership
+      file:
+        path: "/home/{{ target_user }}/go"
+        state: directory
+        owner: "{{ target_user }}"
+        group: "{{ target_user }}"
+        recurse: true
+
+    - name: Install ProjectDiscovery Go tools
+      become: true
+      become_user: "{{ target_user }}"
+      shell: "go install -v {{ item.pkg }}@latest"
+      environment:
+        GOPATH: "/home/{{ target_user }}/go"
+        HOME: "/home/{{ target_user }}"
+      loop:
+        - { pkg: "github.com/projectdiscovery/nuclei/v3/cmd/nuclei",       bin: "nuclei"    }
+        - { pkg: "github.com/projectdiscovery/subfinder/v2/cmd/subfinder", bin: "subfinder" }
+        - { pkg: "github.com/projectdiscovery/httpx/cmd/httpx",            bin: "httpx"     }
+        - { pkg: "github.com/projectdiscovery/naabu/v2/cmd/naabu",         bin: "naabu"     }
+        - { pkg: "github.com/projectdiscovery/katana/cmd/katana",          bin: "katana"    }
+        - { pkg: "github.com/projectdiscovery/dnsx/cmd/dnsx",              bin: "dnsx"      }
+      args:
+        creates: "/home/{{ target_user }}/go/bin/{{ item.bin }}"
+
+    - name: Symlink Go tools onto PATH
+      file:
+        src: "/home/{{ target_user }}/go/bin/{{ item }}"
+        dest: "/home/{{ target_user }}/.local/bin/{{ item }}"
+        state: link
+        force: true
+      loop: [nuclei, subfinder, httpx, naabu, katana, dnsx]
+      failed_when: false
+
+    - name: Update nuclei templates
+      become: true
+      become_user: "{{ target_user }}"
+      command: "/home/{{ target_user }}/.local/bin/nuclei -update-templates"
+      changed_when: false
+      failed_when: false
+
+    # ── summary ─────────────────────────────────────────────────────────────
+    - name: Done
+      debug:
+        msg: |
+          System provisioning complete.
+          - Log out and back in for docker group membership
+          - Clone your tools repo: git clone git@github.com:kool-zero/tools.git ~/tools
+          - Install wrappers: for f in ~/tools/*.sh; do sudo install -m 755 "$f" /usr/local/bin/"$(basename "$f" .sh)"; done
+          - Run 'just tools' to verify everything
