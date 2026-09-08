@@ -1,0 +1,18 @@
+{{ if eq .chezmoi.os "linux" -}}
+#!/bin/bash
+set -euo pipefail
+# ~/.chezmoi_only_copy_files present -> copy ghostty.yml but don't run it; absent -> install
+{{ if stat (joinPath .chezmoi.homeDir ".chezmoi_only_copy_files") -}}
+echo "install-ghostty: ~/.chezmoi_only_copy_files present -> carrying ~/.bootstrap/ghostty.yml, not running it."
+{{ else -}}
+echo "==> install-ghostty: no ~/.chezmoi_only_copy_files -> provisioning via the carried playbook"
+if ! command -v ansible-playbook >/dev/null 2>&1; then
+    echo "    ansible not found, installing it from apt"
+    sudo apt-get update -y
+    sudo apt-get install -y ansible
+fi
+# sudo for the playbook's apt/get_url tasks
+sudo ansible-playbook "$HOME/.bootstrap/ghostty.yml"
+echo "==> install-ghostty: done"
+{{ end -}}
+{{ end -}}

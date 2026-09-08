@@ -1,0 +1,21 @@
+auto_sync = false
+workspaces = true
+enter_accept = true
+
+[ai]
+enabled = false
+
+[sync]
+records = true
+
+[dotfiles]
+enabled = false
+
+history_filter = [
+  "^export .*KEY.*=",
+  "^export .*TOKEN.*=",
+  "^export .*PASSWORD.*=",
+  "^export .*SECRET.*=",
+  ".*--password[= ]",
+  ".*--api-key[= ]",
+]

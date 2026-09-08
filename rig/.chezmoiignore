@@ -1,0 +1,38 @@
+# not applied to home
+README.md
+
+# Talk artifacts: they live in the repo so the audience can grab them, but they are
+# documentation, not part of the rig. Never write them into $HOME.
+Presentation
+Presentation/**
+
+# editor / fs cruft
+.DS_Store
+**/.DS_Store
+
+# Caches that the tools themselves write INSIDE a managed external. Without this,
+# chezmoi sees drift, asks "has changed since chezmoi last wrote it?" and a
+# non-interactive apply dies on "could not open a new TTY", taking the scripts
+# with it. Nothing downstream of the prompt runs.
+.oh-my-zsh/cache/**
+.oh-my-zsh/log/**
+.tmux/plugins/tpm/.git/**
+
+# Linux-only: ignored everywhere else
+{{ if ne .chezmoi.os "linux" }}
+.chezmoiscripts/40-configure-xfce-panel.sh
+.chezmoiscripts/20-install-ghostty.sh
+.chezmoiscripts/50-enable-sshd.sh
+.chezmoiscripts/10-fix-dns.sh
+.bootstrap/ghostty.yml
+# ELF binaries from .chezmoiexternal.toml. penelope is a .py, so it stays
+.local/bin/chisel
+.local/bin/ligolo-proxy
+.local/bin/goshs
+.local/bin/navi
+.local/bin/glow
+.local/bin/atuin
+.local/bin/yazi
+{{ end }}
+
+# the carry/run toggle is the ~/.chezmoi_only_copy_files marker, not an ignore here

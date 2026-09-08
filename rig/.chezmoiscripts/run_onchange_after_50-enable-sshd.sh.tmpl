@@ -1,0 +1,44 @@
+{{ if eq .chezmoi.os "linux" -}}
+#!/bin/bash
+# Kali ships openssh-server installed but the service disabled (UnitFilePreset=disabled).
+# That is a deliberate default for a box that rides onto other people's networks, so this
+# opts in per machine via ~/.enable_sshd rather than opening port 22 everywhere.
+set -euo pipefail
+
+{{ if stat (joinPath .chezmoi.homeDir ".enable_sshd") -}}
+echo "==> enable-sshd: ~/.enable_sshd present, enabling the ssh service"
+
+SUDO=""
+if [ "$(id -u)" -ne 0 ]; then
+    command -v sudo >/dev/null 2>&1 && SUDO="sudo" || {
+        echo "enable-sshd: not root and no sudo; skipping." >&2; exit 0; }
+fi
+
+if ! dpkg -l openssh-server 2>/dev/null | grep -q '^ii'; then
+    echo "==> installing openssh-server"
+    $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y openssh-server \
+        || { echo "enable-sshd: install failed" >&2; exit 0; }
+fi
+
+# enable so it also survives a reboot, not just this boot
+$SUDO systemctl enable --now ssh
+echo "enable-sshd: ssh is $(systemctl is-active ssh), $(systemctl is-enabled ssh) at boot"
+
+# A box reachable over ssh with only password auth and Kali's stock creds is a bad trade.
+KEYS="{{ .chezmoi.homeDir }}/.ssh/authorized_keys"
+if [ ! -s "$KEYS" ]; then
+    echo "enable-sshd: WARNING $KEYS is empty or missing, so key auth cannot work." >&2
+    echo "enable-sshd: sshd is reachable with PASSWORD auth only. Set a real github_username" >&2
+    echo "enable-sshd: (chezmoi init) or add a key, then consider PasswordAuthentication no." >&2
+fi
+{{ else -}}
+# Deliberately does NOT disable a running sshd: pulling it out from under yourself on a
+# remote box is a worse failure than leaving it up. Report the truth and let you decide.
+if [ "$(systemctl is-enabled ssh 2>/dev/null)" = "enabled" ] || [ "$(systemctl is-active ssh 2>/dev/null)" = "active" ]; then
+    echo "enable-sshd: no ~/.enable_sshd marker, but ssh is $(systemctl is-active ssh)/$(systemctl is-enabled ssh)."
+    echo "enable-sshd: not touching it. To turn it off: sudo systemctl disable --now ssh"
+else
+    echo "enable-sshd: no ~/.enable_sshd marker, ssh stays off (Kali's default). touch it to opt in."
+fi
+{{ end -}}
+{{ end -}}

@@ -1,0 +1,34 @@
+packages:
+  apt:
+    - zsh
+    - tmux
+    - git
+    - curl
+    - ca-certificates
+    - fzf
+    - ripgrep
+    - bat
+    - eza
+    - jq
+    - zoxide
+    - direnv
+    - unzip
+    - proxychains4
+    - netexec
+    - hashcat
+    - john
+    - seclists
+    - golang-go
+    - nodejs
+    - npm
+    - pipx
+    - docker.io
+    - lazygit
+    - xrdp
+    - xorgxrdp
+    - kali-desktop-xfce
+    - syncthing
+    - ansible
+  npm:
+    claude: "@anthropic-ai/claude-code"
+    codex: "@openai/codex"

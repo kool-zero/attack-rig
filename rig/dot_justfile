@@ -1,0 +1,65 @@
+set dotenv-load := false
+
+[group('rig')]
+update:
+    chezmoi apply --refresh-externals
+
+[group('rig')]
+tools:
+    #!/usr/bin/env bash
+    ok=0; missing=0
+    show() { command -v "$1" >/dev/null 2>&1 && { printf '  \033[32m*\033[0m %-14s\n' "$1"; ok=$((ok+1)); } || { printf '  \033[31m-\033[0m %-14s (missing)\n' "$1"; missing=$((missing+1)); }; }
+    echo "── shell ──────────────────────────────────"
+    for b in zsh tmux starship atuin navi fzf eza zoxide bat direnv just glow lazygit; do show "$b"; done
+    echo "── offensive ──────────────────────────────"
+    for b in chisel ligolo-proxy penelope goshs; do show "$b"; done
+    echo "── pentest ────────────────────────────────"
+    for b in nxc hashcat john certipy nuclei subfinder httpx naabu katana dnsx; do show "$b"; done
+    echo "── ai ─────────────────────────────────────"
+    for b in claude codex; do show "$b"; done
+    echo; echo "$ok present, $missing missing."
+
+[group('offsec')]
+new-project name target="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p "{{name}}"/{recon,loot,exploits,notes,scans,bin}
+    if ! test -f "{{name}}/.envrc"; then
+        printf 'dotenv_if_exists .env\nexport ENGAGEMENT=%s\nexport LOOT=%s/loot\nPATH_add bin\n' "{{name}}" "{{name}}" > "{{name}}/.envrc"
+    fi
+    if ! test -f "{{name}}/.env"; then
+        LHOST=$(ip -4 -o addr show tun0 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1 || echo "10.10.14.x")
+        printf 'TARGET=%s\nLHOST=%s\nLPORT=4444\n' "{{target}}" "$LHOST" > "{{name}}/.env"
+    fi
+    if ! test -f "{{name}}/.gitignore"; then
+        printf '.env\nloot/\n' > "{{name}}/.gitignore"
+    fi
+    if ! test -f "{{name}}/notes.md"; then
+        printf '# %s\n\n- IP: %s\n- Started: %s\n\n## Hosts\n\n## Credentials\n\n## Flags\n\n## To-do\n- [ ]\n' \
+            "{{name}}" "{{target}}" "$(date +%Y-%m-%d)" > "{{name}}/notes.md"
+    fi
+    printf '%s\n' "{{target}}" >> "{{name}}/targets.txt"
+    echo "Scaffolded {{name}}/"
+    command -v direnv >/dev/null 2>&1 && (cd "{{name}}" && direnv allow 2>/dev/null) || true
+
+[group('security')]
+badchars:
+    #!/usr/bin/env python3
+    print('badchars = (')
+    for start in range(1, 256, 16):
+        row = ''.join(f'\\x{i:02x}' for i in range(start, min(start+16, 256)))
+        print(f'    b"{row}"')
+    print(')')
+
+[group('security')]
+handler os iface port:
+    #!/usr/bin/env bash
+    LHOST=$(ip -4 -o addr show {{iface}} 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1)
+    [ -z "$LHOST" ] && { echo "Could not detect IP for {{iface}}"; exit 1; }
+    if [ "{{os}}" = "windows" ]; then
+        sudo msfconsole -q -x "use exploit/multi/handler; set payload windows/x64/meterpreter/reverse_tcp; set LHOST $LHOST; set LPORT {{port}}; run"
+    elif [ "{{os}}" = "linux" ]; then
+        sudo msfconsole -q -x "use exploit/multi/handler; set payload linux/x64/meterpreter/reverse_tcp; set LHOST $LHOST; set LPORT {{port}}; run"
+    else
+        echo "Usage: just handler <windows|linux> <iface> <port>"
+    fi

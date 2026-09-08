@@ -1,0 +1,72 @@
+{{ if lookPath "xfconf-query" -}}
+#!/bin/bash
+set -euo pipefail
+# adds an XFCE panel launcher with buttons only for the tools that are installed
+# manages one plugin id (30) after Kali's stock launchers; leaves the rest alone
+
+# no panel over SSH / headless; skip
+if ! xfconf-query -c xfce4-panel -l >/dev/null 2>&1; then
+    echo "xfce4-panel channel not available (no session?); skipping."
+    exit 0
+fi
+
+PLUGIN_ID=30
+LDIR="$HOME/.config/xfce4/panel/launcher-${PLUGIN_ID}"
+mkdir -p "$LDIR"
+ITEMS=()
+
+{{ if lookPath "ghostty" -}}
+cat > "$LDIR/ghostty.desktop" << 'DESKTOP'
+[Desktop Entry]
+Name=Ghostty
+Comment=Fast, GPU-accelerated terminal
+Icon=com.mitchellh.ghostty
+TryExec=ghostty
+Exec=ghostty
+Type=Application
+Categories=System;TerminalEmulator;
+Terminal=false
+DESKTOP
+ITEMS+=("ghostty.desktop")
+{{ end -}}
+
+{{ if lookPath "code-oss" -}}
+cat > "$LDIR/code-oss.desktop" << 'DESKTOP'
+[Desktop Entry]
+Name=Code - OSS
+Comment=Code Editing. Redefined.
+Icon=code-oss
+Exec=code-oss %F
+Type=Application
+Categories=Development;IDE;TextEditor;
+Terminal=false
+DESKTOP
+ITEMS+=("code-oss.desktop")
+{{ end -}}
+
+if [ ${#ITEMS[@]} -eq 0 ]; then
+    echo "neither ghostty nor code-oss installed -> removing launcher ${PLUGIN_ID}"
+    xfconf-query -c xfce4-panel -p "/plugins/plugin-${PLUGIN_ID}" -r -R 2>/dev/null || true
+    rm -rf "$LDIR"
+else
+    xfconf-query -c xfce4-panel -p "/plugins/plugin-${PLUGIN_ID}" -n -t string -s "launcher"
+    IARGS=(); for it in "${ITEMS[@]}"; do IARGS+=(-t string -s "$it"); done
+    xfconf-query -c xfce4-panel -p "/plugins/plugin-${PLUGIN_ID}/items" -n --force-array "${IARGS[@]}"
+fi
+
+# re-insert our id after stock launcher-7
+mapfile -t IDS < <(xfconf-query -c xfce4-panel -p /panels/panel-1/plugin-ids 2>/dev/null | grep -E '^[0-9]+$')
+NEWIDS=()
+for i in "${IDS[@]}"; do
+    [ "$i" != "$PLUGIN_ID" ] && NEWIDS+=("$i")
+    if [ "$i" = "7" ] && [ ${#ITEMS[@]} -gt 0 ]; then NEWIDS+=("$PLUGIN_ID"); fi
+done
+if [ ${#ITEMS[@]} -gt 0 ] && ! printf '%s\n' "${NEWIDS[@]}" | grep -qx "$PLUGIN_ID"; then
+    NEWIDS+=("$PLUGIN_ID")
+fi
+IDARGS=(); for i in "${NEWIDS[@]}"; do IDARGS+=(-t int -s "$i"); done
+xfconf-query -c xfce4-panel -p /panels/panel-1/plugin-ids -n --force-array "${IDARGS[@]}"
+
+xfce4-panel -r >/dev/null 2>&1 || true
+echo "panel updated: launcher ${PLUGIN_ID} items = [${ITEMS[*]:-none}]"
+{{ end -}}

@@ -1,0 +1,41 @@
+{{ if eq .chezmoi.os "linux" -}}
+#!/bin/bash
+# Some NAT resolvers (VMware Fusion's among them) return malformed DNS packets. glibc
+# tolerates them, so curl and apt look fine, but Go's stricter resolver rejects them and
+# every Go tool fails with "no such host" - chezmoi included, which breaks externals.
+# No prefix on run_ means this runs every apply, so a box that regresses repairs itself.
+set -euo pipefail
+
+{{ if stat (joinPath .chezmoi.homeDir ".no_dns_fix") -}}
+echo "fix-dns: ~/.no_dns_fix present, leaving resolvers alone."
+{{ else -}}
+command -v dig >/dev/null 2>&1 || exit 0          # nothing to test with, stay out of the way
+dig +time=2 +tries=1 api.github.com A 2>&1 | grep -qi 'malformed' || exit 0
+
+echo "==> fix-dns: this resolver returns malformed packets; Go tools cannot resolve."
+SUDO=""
+if [ "$(id -u)" -ne 0 ]; then
+    command -v sudo >/dev/null 2>&1 && SUDO="sudo" || { echo "fix-dns: no sudo; skipping." >&2; exit 0; }
+fi
+
+# Prefer NetworkManager so the change survives a reboot; it also owns resolv.conf here.
+CON="$(nmcli -t -f NAME connection show --active 2>/dev/null | head -1 || true)"
+if [ -n "$CON" ]; then
+    $SUDO nmcli con mod "$CON" ipv4.dns "1.1.1.1 8.8.8.8" ipv4.ignore-auto-dns yes 2>/dev/null || true
+    $SUDO nmcli con up "$CON" >/dev/null 2>&1 || true
+    sleep 2
+fi
+
+# nmcli does not always take effect, so verify and fall back to resolv.conf directly.
+if dig +time=2 +tries=1 api.github.com A 2>&1 | grep -qi 'malformed'; then
+    printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' | $SUDO tee /etc/resolv.conf >/dev/null
+fi
+
+if dig +time=2 +tries=1 api.github.com A 2>&1 | grep -qi 'malformed'; then
+    echo "fix-dns: still malformed after both attempts; externals will fail." >&2
+else
+    echo "fix-dns: resolver replaced with 1.1.1.1/8.8.8.8. Internal-only names now resolve"
+    echo "fix-dns: through those instead; touch ~/.no_dns_fix to opt out of this."
+fi
+{{ end -}}
+{{ end -}}

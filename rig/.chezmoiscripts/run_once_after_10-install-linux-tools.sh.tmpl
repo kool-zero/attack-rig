@@ -1,0 +1,119 @@
+#!/bin/bash
+# apt packages and npm CLIs, both from .chezmoidata/packages.yaml.
+# Upstream binaries are declared in .chezmoiexternal.toml, not here.
+set -u
+
+LOCAL_BIN="$HOME/.local/bin"
+mkdir -p "$LOCAL_BIN"
+# so the have() checks and verification see freshly-installed binaries
+export PATH="$LOCAL_BIN:$PATH"
+
+INSTALLED=(); SKIPPED=(); FAILED=()
+have() { command -v "$1" >/dev/null 2>&1; }
+
+# --- privilege detection ---
+SUDO=""
+if [ "$(id -u)" -eq 0 ]; then
+    SUDO=""
+elif have sudo; then
+    SUDO="sudo"
+else
+    echo "install-linux-tools: not root and no sudo; apt steps will be skipped." >&2
+fi
+
+# --- base tools from apt (list lives in .chezmoidata/packages.yaml) ---
+APT_PKGS="{{ .packages.apt | join " " }}"
+if have apt-get && { [ "$(id -u)" -eq 0 ] || [ -n "$SUDO" ]; }; then
+    echo "==> apt-get update"
+    $SUDO apt-get update -y \
+        || echo "install-linux-tools: apt-get update failed (non-fatal)" >&2
+    echo "==> apt-get install: $APT_PKGS"
+    $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends $APT_PKGS \
+        || echo "install-linux-tools: some apt packages failed (non-fatal)" >&2
+else
+    echo "install-linux-tools: apt-get unavailable or no privileges; skipping base packages." >&2
+fi
+
+# Debian/Kali ship bat as batcat; symlink so our config's 'bat' resolves
+if ! have bat && command -v batcat >/dev/null 2>&1; then
+    ln -sf "$(command -v batcat)" "$LOCAL_BIN/bat" \
+        && { echo "install-linux-tools: linked bat -> batcat"; INSTALLED+=("bat(->batcat)"); }
+fi
+
+# --- run an installer that targets a bin dir ---
+# $1=binary  rest=install command
+install_via_script() {
+    local bin="$1"; shift
+    if have "$bin"; then SKIPPED+=("$bin"); return 0; fi
+    if "$@" >/dev/null 2>&1 && [ -x "$LOCAL_BIN/$bin" ]; then
+        INSTALLED+=("$bin")
+    else
+        FAILED+=("$bin (installer failed)")
+    fi
+}
+
+# --- vendor installers: upstream ships an install script, so use it ---
+echo "==> installing just / starship into $LOCAL_BIN"
+
+# just: command runner
+install_via_script "just" bash -c \
+    'curl -fsSL https://just.systems/install.sh | bash -s -- --to "$0"' "$LOCAL_BIN"
+# starship: prompt
+install_via_script "starship" sh -c \
+    'curl -fsSL https://starship.rs/install.sh | sh -s -- --yes --bin-dir "$0"' "$LOCAL_BIN"
+
+# --- Linuxbrew escape hatch ---
+# For the tools that are in neither apt nor a GitHub release, brew is usually the answer.
+# Left commented out: the first bootstrap pulls a whole toolchain and takes minutes.
+# if ! have brew && [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; then
+#     eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+# fi
+# if ! have brew; then
+#     NONINTERACTIVE=1 bash -c \
+#         "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" \
+#         || echo "install-linux-tools: brew bootstrap failed (non-fatal)" >&2
+#     [ -x /home/linuxbrew/.linuxbrew/bin/brew ] && eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+# fi
+# if have brew; then
+#     brew install navi just glow atuin starship \
+#         || echo "install-linux-tools: brew install failed (non-fatal)" >&2
+# fi
+
+# --- AI CLIs from npm into ~/.local (no sudo); node from apt if missing ---
+echo "==> AI CLIs: claude-code + codex (via npm into $HOME/.local)"
+if ! have node || ! have npm; then
+    if have apt-get && { [ "$(id -u)" -eq 0 ] || [ -n "$SUDO" ]; }; then
+        echo "==> apt-get install: nodejs npm (Node for the AI CLIs)"
+        $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nodejs npm \
+            || echo "install-linux-tools: nodejs/npm apt install failed (non-fatal)" >&2
+    else
+        echo "install-linux-tools: node/npm missing and can't apt-install them; skipping AI CLIs." >&2
+    fi
+fi
+
+# npm_install_global <binary> <npm-package>: --prefix ~/.local keeps it sudo-free
+npm_install_global() {
+    local bin="$1" pkg="$2"
+    if have "$bin"; then SKIPPED+=("$bin"); return 0; fi
+    if ! have npm; then FAILED+=("$bin (npm unavailable)"); return 1; fi
+    if npm install -g --prefix "$HOME/.local" "$pkg" >/dev/null 2>&1 && have "$bin"; then
+        INSTALLED+=("$bin")
+    else
+        FAILED+=("$bin (npm install $pkg failed)")
+    fi
+}
+{{ range $bin, $pkg := .packages.npm -}}
+npm_install_global "{{ $bin }}" "{{ $pkg }}"
+{{ end -}}
+
+# --- summary ---
+echo
+echo "==== install-linux-tools summary ===="
+[ ${#INSTALLED[@]} -gt 0 ] && echo "installed:       ${INSTALLED[*]}"
+[ ${#SKIPPED[@]}   -gt 0 ] && echo "already present: ${SKIPPED[*]}"
+[ ${#FAILED[@]}    -gt 0 ] && echo "failed (non-fatal): ${FAILED[*]}" >&2
+echo "(apt: $APT_PKGS)"
+echo "(npm into ~/.local: {{ range $bin, $pkg := .packages.npm }}{{ $pkg }} {{ end }})"
+echo "(upstream binaries come from .chezmoiexternal.toml, not this script)"
+echo "Open a new shell or run 'exec zsh' so ~/.local/bin and the new tools are on PATH."
+exit 0
