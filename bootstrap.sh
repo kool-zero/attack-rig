@@ -59,8 +59,9 @@ sudo chown -R $TARGET_USER:$TARGET_USER /home/$TARGET_USER/.ssh
 echo "[bootstrap] SSH key copied to $TARGET_USER"
 
 # ── Accept GitHub host key ────────────────────────────────────────────────────
-sudo -u $TARGET_USER ssh-keyscan github.com >> /home/$TARGET_USER/.ssh/known_hosts 2>/dev/null
+ssh-keyscan github.com 2>/dev/null | sudo tee /home/$TARGET_USER/.ssh/known_hosts > /dev/null
 sudo chown $TARGET_USER:$TARGET_USER /home/$TARGET_USER/.ssh/known_hosts
+sudo chmod 600 /home/$TARGET_USER/.ssh/known_hosts
 echo "[bootstrap] GitHub host key accepted"
 
 # ── Install prerequisites ─────────────────────────────────────────────────────
