@@ -62,6 +62,7 @@ echo "[bootstrap] SSH key copied to $TARGET_USER"
 ssh-keyscan github.com 2>/dev/null | sudo tee /home/$TARGET_USER/.ssh/known_hosts > /dev/null
 sudo chown $TARGET_USER:$TARGET_USER /home/$TARGET_USER/.ssh/known_hosts
 sudo chmod 600 /home/$TARGET_USER/.ssh/known_hosts
+sudo chown $TARGET_USER:$TARGET_USER /home/$TARGET_USER/.ssh/known_hosts
 echo "[bootstrap] GitHub host key accepted"
 
 # ── Install prerequisites ─────────────────────────────────────────────────────
