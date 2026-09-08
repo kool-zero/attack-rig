@@ -85,7 +85,7 @@ sudo systemctl enable --now qemu-guest-agent 2>/dev/null || true
 echo "[bootstrap] qemu-guest-agent enabled"
 
 # ── Install chezmoi for zero ──────────────────────────────────────────────────
-sudo -u $TARGET_USER bash -c 'sh -c "$(curl -fsLS get.chezmoi.io)"'
+sudo -i -u $TARGET_USER bash -c 'sh -c "$(curl -fsLS get.chezmoi.io)"'
 echo "[bootstrap] chezmoi installed for $TARGET_USER"
 
 # ── Download setup.sh for zero to run after reboot ────────────────────────────
